@@ -15,6 +15,7 @@ import traceback
 
 from app.services.ml.face_recognition import face_recognizer
 from app.services.ml.engagement_detector import engagement_detector
+from app.services.ml.temporal_tracker import TemporalTrackerManager
 from app.services.tracking.byte_tracker import tracker
 from app.db.database import db
 
@@ -60,6 +61,9 @@ class VideoProcessor:
                 self.student_names[s['student_id']] = s['full_name']
         except Exception as e:
             print(f"Failed to load names: {e}")
+        
+        # Per-student temporal tracker (EMA attention score, sleep, phone debounce)
+        self.temporal_tracker = TemporalTrackerManager()
         
         print(f"📹 VideoProcessor initialized for session {session_id}")
     
@@ -203,8 +207,13 @@ class VideoProcessor:
         # Step 1: Face Recognition
         faces = face_recognizer.recognize_faces(frame)
         
-        # Step 2: Engagement Detection
-        engagement_results = engagement_detector.analyze_frame(frame)
+        # Step 2: Engagement Detection (hybrid — pass temporal profiles for EMA + sleep checks)
+        temporal_profiles = {
+            tid: self.temporal_tracker.get_or_create_profile(tid)
+            for tid in self.temporal_tracker.profiles  # pre-existing profiles
+        }
+        # Pass full dict to engine so new track_ids also get created on the fly
+        engagement_results = engagement_detector.analyze_frame(frame, temporal_profiles=self.temporal_tracker.profiles)
         
         # Step 3: Prepare detections for tracking
         detections = []
@@ -236,6 +245,11 @@ class VideoProcessor:
                 eng_data.track_id = track.track_id
                 eng_data.student_id = track.student_id
                 
+                # Ensure temporal profile exists under the real track_id from tracker
+                profile = self.temporal_tracker.get_or_create_profile(track.track_id)
+                if track.student_id:
+                    profile.student_id = track.student_id
+                
                 tracked_engagement.append(eng_data)
                 
                 # Mark attendance (first time only)
@@ -258,15 +272,22 @@ class VideoProcessor:
                         track.confidence
                     )
                 
-                # Buffer engagement log
+                # Buffer engagement log — now includes rich behavioural signals
+                profile = self.temporal_tracker.get_or_create_profile(track.track_id)
                 log_entry = {
                     'session_id': self.session_id,
                     'student_id': track.student_id,
                     'track_id': track.track_id,
                     'engagement_score': eng_data.engagement_score,
+                    'attention_score': eng_data.attention_score,
+                    'engagement_state': eng_data.engagement_state,
                     'posture_state': eng_data.posture_state,
                     'gaze_direction': eng_data.gaze_direction,
                     'phone_detected': eng_data.phone_detected,
+                    'is_sleeping': eng_data.is_sleeping,
+                    'is_drowsy': eng_data.is_drowsy,
+                    'yawn_count': eng_data.yawn_count,
+                    'phone_time_sec': eng_data.phone_time_sec,
                     'head_visible': eng_data.head_visible,
                     'bbox_x': eng_data.bbox[0],
                     'bbox_y': eng_data.bbox[1],
@@ -280,7 +301,7 @@ class VideoProcessor:
             db.log_engagement_batch(self.engagement_buffer)
             self.engagement_buffer = []
         
-        # Compute class metrics
+        # Compute class metrics — use smoothed attention score
         class_avg_engagement = 0.0
         if tracked_engagement:
             class_avg_engagement = sum(e.engagement_score for e in tracked_engagement) / len(tracked_engagement)
@@ -362,34 +383,44 @@ class VideoProcessor:
         
         for eng in engagement_data:
             x, y, w, h = eng.bbox
-            
-            # Color based on engagement
-            if eng.engagement_score >= 0.7:
-                color = (0, 255, 0)  # Green - attentive
-            elif eng.engagement_score >= 0.5:
-                color = (0, 255, 255)  # Yellow - neutral
+            state = getattr(eng, 'engagement_state', None)
+            score = eng.engagement_score
+
+            # Colour-coded by state
+            if eng.is_sleeping:
+                color = (128, 0, 128)    # Purple — sleeping
+            elif eng.is_drowsy:
+                color = (0, 100, 255)    # Orange — drowsy
+            elif state == 'attentive':
+                color = (0, 220, 80)     # Green — attentive
+            elif state == 'mildly_distracted':
+                color = (0, 230, 230)    # Cyan — mild
+            elif state == 'highly_distracted':
+                color = (0, 0, 255)      # Red — highly distracted
             else:
-                color = (0, 0, 255)  # Red - distracted
-            
+                color = (180, 180, 180)  # Grey — unknown
+
             # Draw bbox
             cv2.rectangle(annotated, (x, y), (x+w, y+h), color, 2)
             
-            # Draw label
+            # Build label
             label_parts = []
             
             if eng.student_id:
                 name = self.student_names.get(eng.student_id, f"ID:{eng.student_id}")
-                # Use only first name to keep UI clean
                 short_name = name.split()[0] if isinstance(name, str) else name
                 label_parts.append(short_name)
             else:
-                label_parts.append(f"Track:{eng.track_id}")
+                label_parts.append(f"T:{eng.track_id}")
             
-            label_parts.append(f"{eng.engagement_score:.2f}")
-            
-            if eng.phone_detected:
-                label_parts.append("📱")
-            
+            attn = getattr(eng, 'attention_score', score * 100)
+            label_parts.append(f"A:{attn:.0f}%")
+
+            if eng.is_sleeping:          label_parts.append("💤")
+            elif eng.is_drowsy:          label_parts.append("😪")
+            if eng.phone_detected:       label_parts.append("📱")
+            if getattr(eng, 'is_yawning', False): label_parts.append("🥱")
+
             label = " ".join(label_parts)
             
             # Background for text

@@ -97,9 +97,15 @@ class DatabaseManager:
                 track_id INTEGER,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 engagement_score REAL,
+                attention_score REAL,
+                engagement_state TEXT,
                 posture_state TEXT,
                 gaze_direction TEXT,
                 phone_detected BOOLEAN DEFAULT 0,
+                is_sleeping BOOLEAN DEFAULT 0,
+                is_drowsy BOOLEAN DEFAULT 0,
+                yawn_count INTEGER DEFAULT 0,
+                phone_time_sec REAL DEFAULT 0,
                 head_visible BOOLEAN DEFAULT 1,
                 bbox_x INTEGER,
                 bbox_y INTEGER,
@@ -109,11 +115,20 @@ class DatabaseManager:
             )
         """)
         
-        # Partitioned index for fast time-range queries
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_engagement_session_time 
-            ON engagement_logs(session_id, timestamp)
-        """)
+        # Migrate existing databases: add new columns if they don't exist
+        new_columns = [
+            ("attention_score",  "REAL"),
+            ("engagement_state", "TEXT"),
+            ("is_sleeping",      "BOOLEAN DEFAULT 0"),
+            ("is_drowsy",        "BOOLEAN DEFAULT 0"),
+            ("yawn_count",       "INTEGER DEFAULT 0"),
+            ("phone_time_sec",   "REAL DEFAULT 0"),
+        ]
+        for col_name, col_type in new_columns:
+            try:
+                cursor.execute(f"ALTER TABLE engagement_logs ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass  # Column already exists — safe to ignore
         
         # Session summary (denormalized for fast reporting)
         cursor.execute("""
@@ -328,7 +343,7 @@ class DatabaseManager:
     
     # Engagement Operations (Batch Insert for Performance)
     def log_engagement_batch(self, logs: List[Dict]):
-        """Batch insert engagement logs (much faster)"""
+        """Batch insert engagement logs with rich behavioural signals"""
         if not logs:
             return
         
@@ -337,14 +352,33 @@ class DatabaseManager:
         
         cursor.executemany("""
             INSERT INTO engagement_logs 
-            (session_id, student_id, track_id, engagement_score, posture_state, 
-             gaze_direction, phone_detected, head_visible, bbox_x, bbox_y, bbox_w, bbox_h)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (session_id, student_id, track_id,
+             engagement_score, attention_score, engagement_state,
+             posture_state, gaze_direction,
+             phone_detected, is_sleeping, is_drowsy, yawn_count, phone_time_sec,
+             head_visible, bbox_x, bbox_y, bbox_w, bbox_h)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
-            (log['session_id'], log.get('student_id'), log.get('track_id'),
-             log['engagement_score'], log['posture_state'], log['gaze_direction'],
-             log['phone_detected'], log['head_visible'],
-             log.get('bbox_x'), log.get('bbox_y'), log.get('bbox_w'), log.get('bbox_h'))
+            (
+                log['session_id'],
+                log.get('student_id'),
+                log.get('track_id'),
+                log.get('engagement_score', 0),
+                log.get('attention_score'),
+                log.get('engagement_state'),
+                log.get('posture_state'),
+                log.get('gaze_direction'),
+                int(bool(log.get('phone_detected', False))),
+                int(bool(log.get('is_sleeping', False))),
+                int(bool(log.get('is_drowsy', False))),
+                log.get('yawn_count', 0),
+                log.get('phone_time_sec', 0.0),
+                int(bool(log.get('head_visible', True))),
+                log.get('bbox_x'),
+                log.get('bbox_y'),
+                log.get('bbox_w'),
+                log.get('bbox_h'),
+            )
             for log in logs
         ])
         
