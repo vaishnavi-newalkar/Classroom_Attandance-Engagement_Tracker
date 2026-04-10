@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import os
 
 # Import routers
-from app.api.endpoints import registration, sessions, attendance
+from app.api.endpoints import registration, sessions, attendance, extension
 
 # Import services for initialization
 from app.db.database import db
@@ -83,6 +83,7 @@ app.add_middleware(
 app.include_router(registration.router, prefix="/api/registration", tags=["Registration"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["Sessions"])
 app.include_router(attendance.router, prefix="/api/attendance", tags=["Attendance"])
+app.include_router(extension.router, prefix="/api/ext", tags=["extension"])
 
 # Create directories
 os.makedirs("uploads", exist_ok=True)

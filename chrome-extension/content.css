@@ -1,0 +1,28 @@
+#classroom-ai-quiz-overlay {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px);
+  z-index: 9999999; display: flex; justify-content: center; align-items: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.cai-modal {
+  background: #111827; border: 1px solid #1f2937; border-radius: 12px;
+  width: 400px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  color: #fff;
+}
+.cai-header { color: #4f8ef7; font-weight: 700; font-size: 14px; margin-bottom: 16px; text-transform: uppercase; }
+.cai-question { font-size: 18px; line-height: 1.4; margin-bottom: 24px; font-weight: 500; }
+.cai-options { display: flex; flex-direction: column; gap: 10px; }
+.cai-opt {
+  background: #1f2937; color: #fff; border: 1px solid #374151; padding: 12px;
+  border-radius: 8px; text-align: left; font-size: 14px; cursor: pointer; transition: 0.2s;
+}
+.cai-opt:hover { background: #374151; border-color: #4f8ef7; }
+.cai-timer { margin-top: 20px; font-size: 12px; color: #f25c5c; text-align: center; font-weight: 600;}
+
+/* Force Google Meet Captions to be invisible but still existent in the DOM for scraping */
+.VbUSgf, .Kc8rwc, div[jsname="xtS7te"] {
+  opacity: 0.001 !important;
+  pointer-events: none !important;
+  transform: scale(0.01) !important;
+  z-index: -9999 !important;
+}

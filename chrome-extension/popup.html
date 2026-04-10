@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Classroom AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px; font-family: 'Segoe UI', sans-serif;
+      background: #0b0f19; color: #fff; padding: 16px;
+    }
+    .header {
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #1f2937; padding-bottom: 12px; margin-bottom: 14px;
+    }
+    .logo { font-size: 22px; }
+    .title { font-size: 15px; font-weight: 700; color: #4f8ef7; }
+    .subtitle { font-size: 11px; color: #6b7280; }
+
+    label { font-size: 12px; color: #9ca3af; margin-bottom: 5px; display: block; }
+    input {
+      width: 100%; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid #374151; background: #111827; color: #fff;
+      font-size: 13px; outline: none; margin-bottom: 14px;
+    }
+    input:focus { border-color: #4f8ef7; }
+
+    .btn {
+      width: 100%; padding: 10px; border-radius: 8px; border: none;
+      font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s;
+    }
+    .btn-primary { background: #4f8ef7; color: #fff; }
+    .btn-primary:hover { background: #3b74d4; }
+    
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      background: rgba(67, 217, 140, 0.15); color: #43d98c; margin-bottom: 14px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🧠</div>
+    <div>
+      <div class="title">Classroom AI Focus</div>
+      <div class="subtitle">Online Connect Extension</div>
+    </div>
+  </div>
+
+  <div id="login-section">
+    <label>Student Enrollment ID</label>
+    <input type="text" id="enrollId" placeholder="e.g. CS202401" />
+    <label>Session ID</label>
+    <input type="number" id="sessionId" placeholder="e.g. 68" />
+    <button class="btn btn-primary" id="connectBtn">Connect to Session</button>
+  </div>
+
+  <div id="connected-section" style="display:none; text-align: center;">
+    <div class="badge"><span class="dot"></span> Monitoring Active</div>
+    <div style="font-size: 12px; color: #9ca3af; margin-bottom: 20px;">
+      Connected as <span id="displayId" style="color:white;font-weight:bold;"></span> <br/>
+      Session: <span id="displaySession" style="color:white;font-weight:bold;"></span>
+    </div>
+    <p style="font-size: 11px; color: #6b7280; line-height: 1.4;">
+      Leave this extension running. It will automatically transcribe the Google Meet safely in the background and pop-up Live Quizzes to ensure you are paying attention.
+    </p>
+    <button class="btn btn-primary" id="disconnectBtn" style="margin-top: 20px; background: #1f2937; color: #9ca3af; border: 1px solid #374151;">Disconnect</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
