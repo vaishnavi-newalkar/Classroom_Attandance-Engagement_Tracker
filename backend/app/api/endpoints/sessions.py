@@ -473,7 +473,7 @@ async def list_sessions():
         
         cursor.execute("""
             SELECT session_id, course_code, course_name, classroom, 
-                   scheduled_start, status, average_engagement,
+                   scheduled_start, actual_start, actual_end, status, average_engagement,
                    (SELECT COUNT(*) FROM attendance a WHERE a.session_id = sessions.session_id) as total_present,
                    (SELECT COUNT(*) FROM students st WHERE st.is_active = 1 AND (st.section = sessions.course_code OR st.section IS NULL OR st.section = '')) as total_enrolled
             FROM sessions
@@ -498,6 +498,14 @@ async def list_sessions():
     except Exception as e:
         raise HTTPException(500, f"Failed to list sessions: {str(e)}")
 
+@router.delete("/{session_id}")
+async def delete_session(session_id: int):
+    """Delete a session completely from the database"""
+    try:
+        db.delete_session(session_id)
+        return {"success": True, "message": "Session deleted"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete session: {str(e)}")
 
 @router.get("/{session_id}/report")
 async def get_session_report(session_id: int):
@@ -528,9 +536,13 @@ async def get_session_report(session_id: int):
         )
         total_enrolled = cursor.fetchone()[0] or 0
         
+        # Read directly from session table
+        unidentified_count = getattr(session, 'unidentified_count', 0)
+        
         session_dict = dict(session)
         session_dict['total_present']  = total_present
         session_dict['total_enrolled'] = total_enrolled
+        session_dict['unidentified_count'] = session_dict.get('unidentified_count', 0)
         # 3. Per-student engagement from engagement_logs (real behavioral data)
         cursor.execute("""
             SELECT s.full_name, s.enrollment_id, a.attendance_id,

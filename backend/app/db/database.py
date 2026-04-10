@@ -129,6 +129,11 @@ class DatabaseManager:
                 cursor.execute(f"ALTER TABLE engagement_logs ADD COLUMN {col_name} {col_type}")
             except Exception:
                 pass  # Column already exists — safe to ignore
+                
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN unidentified_count INTEGER DEFAULT 0")
+        except Exception:
+            pass
         
         # Session summary (denormalized for fast reporting)
         cursor.execute("""
@@ -421,6 +426,18 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         cursor.execute("DELETE FROM tracking_cache WHERE session_id = ?", (session_id,))
+        conn.commit()
+        conn.close()
+        
+    def delete_session(self, session_id: int):
+        """Delete a session and all its cascading data"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM engagement_logs WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM attendance WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM session_summary WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM tracking_cache WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         conn.commit()
         conn.close()
 

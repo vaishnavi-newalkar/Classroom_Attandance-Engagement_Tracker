@@ -16,6 +16,7 @@ import traceback
 from app.services.ml.face_recognition import face_recognizer
 from app.services.ml.engagement_detector import engagement_detector
 from app.services.ml.temporal_tracker import TemporalTrackerManager
+from app.services.video.video_source import WebcamSource, ESP32Source
 from app.services.tracking.byte_tracker import tracker
 from app.db.database import db
 
@@ -45,6 +46,7 @@ class VideoProcessor:
         
         # Attendance cache (avoid duplicate marking)
         self.attendance_marked = set()
+        self.max_unidentified = 0
         
         # Engagement logs buffer (batch writes)
         self.engagement_buffer = []
@@ -75,6 +77,8 @@ class VideoProcessor:
             camera_source: Camera index or video path
         """
         self.is_running = True
+        self.active_source_type = 'webcam'
+
         
         # Start capture thread
         capture_thread = Thread(target=self._capture_frames, args=(camera_source,), daemon=True)
@@ -105,27 +109,30 @@ class VideoProcessor:
         Frame capture thread
         Runs independently to avoid blocking
         """
-        # Open video source
-        if camera_source.isdigit():
-            cap = cv2.VideoCapture(int(camera_source))
+        # Instantiate correct video source logic wrapper
+        if str(camera_source).startswith("http"):
+            source = ESP32Source(camera_source)
         else:
-            cap = cv2.VideoCapture(camera_source)
+            source = WebcamSource(camera_source)
+            
+        self.active_source_type = source.get_source_type()
         
-        if not cap.isOpened():
+        if not source.isOpened():
             print(f"❌ Failed to open camera: {camera_source}")
             self.is_running = False
             return
         
-        print(f"📷 Camera opened: {camera_source}")
+        print(f"📷 Camera opened: {camera_source} ({self.active_source_type})")
         
         frame_idx = 0
         
         while self.is_running:
-            ret, frame = cap.read()
+            ret, frame = source.read()
             
             if not ret:
-                print("⚠️  Frame capture failed")
-                break
+                # Network cameras might temporarily drop setup backoff in source.read()
+                time.sleep(0.05)
+                continue
             
             # Frame skipping for performance
             if frame_idx % self.frame_skip == 0:
@@ -146,7 +153,7 @@ class VideoProcessor:
             
             frame_idx += 1
         
-        cap.release()
+        source.release()
         print("📷 Camera released")
     
     def _process_frames(self):
@@ -300,6 +307,18 @@ class VideoProcessor:
         if len(self.engagement_buffer) >= self.buffer_size:
             db.log_engagement_batch(self.engagement_buffer)
             self.engagement_buffer = []
+            
+        current_unidentified = sum(1 for eng in tracked_engagement if eng.student_id is None)
+        if current_unidentified > self.max_unidentified:
+            self.max_unidentified = current_unidentified
+            try:
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("UPDATE sessions SET unidentified_count = ? WHERE session_id = ?", (self.max_unidentified, self.session_id))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Failed to update session unidentified_count: {e}")
         
         # Compute class metrics — use smoothed attention score
         class_avg_engagement = 0.0
@@ -432,6 +451,11 @@ class VideoProcessor:
         # Draw FPS
         cv2.putText(annotated, f"FPS: {self.fps:.1f}", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                   
+        # Draw ESP32 monitoring indicator
+        if getattr(self, 'active_source_type', 'webcam') == 'esp32':
+            cv2.putText(annotated, "🔴 Monitoring via ESP32-CAM", (10, 55), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         
         return annotated
     
