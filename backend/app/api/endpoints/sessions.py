@@ -507,6 +507,134 @@ async def delete_session(session_id: int):
     except Exception as e:
         raise HTTPException(500, f"Failed to delete session: {str(e)}")
 
+
+@router.get("/{session_id}/manual-status")
+async def get_manual_status(session_id: int):
+    """
+    Returns present students, absent students, and unidentified detections
+    for the manual attendance management UI.
+    """
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+
+        # Get session info
+        cursor.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
+        session = cursor.fetchone()
+        if not session:
+            raise HTTPException(404, "Session not found")
+        course_code = session["course_code"]
+
+        # All enrolled students
+        cursor.execute("""
+            SELECT student_id, enrollment_id, full_name
+            FROM students WHERE is_active = 1
+        """)
+        all_students = {r["student_id"]: dict(r) for r in cursor.fetchall()}
+
+        # Present students (from attendance table)
+        cursor.execute("""
+            SELECT a.student_id, a.confidence_score, a.marked_at, a.method,
+                   s.full_name, s.enrollment_id
+            FROM attendance a
+            JOIN students s ON s.student_id = a.student_id
+            WHERE a.session_id = ?
+        """, (session_id,))
+        present_rows = cursor.fetchall()
+        present_ids = {r["student_id"] for r in present_rows}
+        present = [dict(r) for r in present_rows]
+
+        # Absent = all enrolled - present
+        absent = [
+            {"student_id": sid, "full_name": s["full_name"], "enrollment_id": s["enrollment_id"]}
+            for sid, s in all_students.items()
+            if sid not in present_ids
+        ]
+
+        # Unidentified detections (face crops)
+        cursor.execute("""
+            SELECT id, track_id, image_base64, created_at
+            FROM unidentified_detections
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+        """, (session_id,))
+        unidentified = [
+            {
+                "id": r["id"],
+                "track_id": r["track_id"],
+                "label": f"Unknown_{r['track_id']}",
+                "image_base64": r["image_base64"],
+                "captured_at": r["created_at"]
+            }
+            for r in cursor.fetchall()
+        ]
+
+        conn.close()
+        return {
+            "success": True,
+            "session_id": session_id,
+            "present": present,
+            "absent": absent,
+            "unidentified": unidentified
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get manual status: {str(e)}")
+
+
+@router.post("/{session_id}/mark-manual")
+async def mark_manual_attendance(session_id: int, payload: dict):
+    """
+    Manually map an unidentified track_id to a registered student.
+    Payload: {"track_id": int, "student_id": int}
+    """
+    try:
+        track_id = payload.get("track_id")
+        student_id = payload.get("student_id")
+        if track_id is None or student_id is None:
+            raise HTTPException(400, "track_id and student_id are required")
+
+        conn = db.get_connection()
+        cursor = conn.cursor()
+
+        # Mark attendance (ignore if already marked)
+        cursor.execute("""
+            INSERT OR IGNORE INTO attendance (session_id, student_id, confidence_score, method)
+            VALUES (?, ?, 1.0, 'manual')
+        """, (session_id, student_id))
+
+        # Update engagement logs to link this track_id to the student
+        cursor.execute("""
+            UPDATE engagement_logs
+            SET student_id = ?
+            WHERE session_id = ? AND track_id = ? AND (student_id IS NULL OR student_id = '')
+        """, (student_id, session_id, track_id))
+
+        # Update total_present in sessions table
+        cursor.execute("""
+            UPDATE sessions
+            SET total_present = (
+                SELECT COUNT(*) FROM attendance WHERE session_id = ?
+            )
+            WHERE session_id = ?
+        """, (session_id, session_id))
+
+        # Remove from unidentified_detections
+        cursor.execute("""
+            DELETE FROM unidentified_detections
+            WHERE session_id = ? AND track_id = ?
+        """, (session_id, track_id))
+
+        conn.commit()
+        conn.close()
+
+        return {"success": True, "message": f"Student {student_id} marked present via manual override"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to mark manual attendance: {str(e)}")
+
 @router.get("/{session_id}/report")
 async def get_session_report(session_id: int):
     """Get full post-session analytical report — fully dynamic from DB"""

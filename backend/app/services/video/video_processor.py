@@ -5,6 +5,7 @@ Optimized for 30-50 students with low latency
 
 import cv2
 import numpy as np
+import base64
 from typing import Dict, List, Optional
 import asyncio
 from queue import Queue
@@ -47,6 +48,8 @@ class VideoProcessor:
         # Attendance cache (avoid duplicate marking)
         self.attendance_marked = set()
         self.max_unidentified = 0
+        # Set of track_ids we have already saved a face crop for
+        self.unidentified_saved = set()
         
         # Engagement logs buffer (batch writes)
         self.engagement_buffer = []
@@ -278,6 +281,24 @@ class VideoProcessor:
                         track.student_id,
                         track.confidence
                     )
+                
+                # Save a face crop snapshot for unidentified tracks (once per track_id)
+                if not track.student_id and track.track_id not in self.unidentified_saved:
+                    try:
+                        x, y, w, h = track.bbox
+                        fh, fw = frame.shape[:2]
+                        x1 = max(0, x)
+                        y1 = max(0, y)
+                        x2 = min(fw, x + w)
+                        y2 = min(fh, y + h)
+                        crop = frame[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            b64 = base64.b64encode(buf.tobytes()).decode('utf-8')
+                            db.save_unidentified_detection(self.session_id, track.track_id, b64)
+                            self.unidentified_saved.add(track.track_id)
+                    except Exception as e:
+                        print(f"⚠️ Failed to save unidentified crop: {e}")
                 
                 # Buffer engagement log — now includes rich behavioural signals
                 profile = self.temporal_tracker.get_or_create_profile(track.track_id)

@@ -153,6 +153,19 @@ class DatabaseManager:
             )
         """)
         
+        # Unidentified face crops table (for manual attendance)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS unidentified_detections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                track_id INTEGER NOT NULL,
+                image_base64 TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id),
+                UNIQUE(session_id, track_id)
+            )
+        """)
+        
         # Tracking cache (in-memory style table for active sessions)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tracking_cache (
@@ -437,9 +450,25 @@ class DatabaseManager:
         cursor.execute("DELETE FROM attendance WHERE session_id = ?", (session_id,))
         cursor.execute("DELETE FROM session_summary WHERE session_id = ?", (session_id,))
         cursor.execute("DELETE FROM tracking_cache WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM unidentified_detections WHERE session_id = ?", (session_id,))
         cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         conn.commit()
         conn.close()
+
+    def save_unidentified_detection(self, session_id: int, track_id: int, image_base64: str):
+        """Save a cropped face frame of an unidentified individual for later manual identification."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO unidentified_detections (session_id, track_id, image_base64)
+                VALUES (?, ?, ?)
+            """, (session_id, track_id, image_base64))
+            conn.commit()
+        except sqlite3.Error as e:
+            print(f"DB Error saving unidentified face crop: {e}")
+        finally:
+            conn.close()
 
 
 # Global database instance
