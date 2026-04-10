@@ -1,0 +1,51 @@
+# Node / React
+node_modules/
+dist/
+build/
+.npm/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+dist/
+downloads/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env
+
+# Databases
+*.db
+*.sqlite3
+backend/classroom_ai.db
+
+# Machine Learning Models & Caches
+.insightface/
+models/
+*.pt
+*.onnx
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Application Specific
+uploads/
+logs/
+*.log

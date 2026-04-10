@@ -1,0 +1,44 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+websockets==12.0
+
+# Computer Vision & ML
+opencv-python==4.9.0.80
+torch==2.1.2
+torchvision==0.16.2
+ultralytics==8.1.0
+onnxruntime==1.16.3
+insightface==0.7.3
+mediapipe==0.10.9
+
+# Face Recognition
+faiss-cpu==1.7.4
+scikit-learn==1.4.0
+
+# Tracking
+filterpy==1.4.5
+scipy==1.12.0
+lapx
+
+# Database
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+sqlalchemy==2.0.25
+alembic==1.13.1
+redis==5.0.1
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+Pillow==10.2.0
+numpy==1.26.3
+
+# Logging
+loguru==0.7.2
+
+# Testing
+pytest==7.4.4
+httpx==0.26.0
